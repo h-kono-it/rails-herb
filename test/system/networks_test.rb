@@ -45,6 +45,18 @@ class NetworksTest < ApplicationSystemTestCase
     assert_text "設定 57%" # 80 / (80 + 60)
   end
 
+  test "adds a right-turn lane and draws it" do
+    from_west = @network.links.find_by!(from_node: @west)
+
+    visit network_path(@network)
+    assert_no_selector ".network__pocket"
+
+    find("input[aria-label='西からの右折レーンの長さ']").set(10)
+
+    assert_equal 10, wait_for { from_west.reload.right_turn_lane == 10 && from_west.right_turn_lane }
+    assert_selector ".network__pocket", count: 1
+  end
+
   private
     def wait_for(timeout: Capybara.default_max_wait_time)
       deadline = Time.current + timeout

@@ -17,7 +17,7 @@ class Network < ApplicationRecord
   def graph
     Simulation::Graph.new(
       nodes: nodes.map { |node| Simulation::Node.new(id: node.id, x: node.x, y: node.y, signalized: node.signalized, inflow: node.inflow) },
-      links: links.map { |link| Simulation::Link.new(id: link.id, from: link.from_node_id, to: link.to_node_id, speed_limit: link.speed_limit, turn_weights: link.turn_weights) }
+      links: links.map { |link| Simulation::Link.new(id: link.id, from: link.from_node_id, to: link.to_node_id, speed_limit: link.speed_limit, turn_weights: link.turn_weights, right_turn_lane: link.right_turn_lane) }
     )
   end
 end

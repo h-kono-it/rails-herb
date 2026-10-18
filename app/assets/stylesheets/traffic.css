@@ -402,3 +402,8 @@ body {
 .network__muted {
   color: var(--muted);
 }
+
+/* Extra lane width along a right-turn pocket */
+.network__pocket {
+  opacity: 0.85;
+}

@@ -8,6 +8,8 @@ class Link < ApplicationRecord
 
   validates :speed_limit, numericality: { only_integer: true, in: 1..5 }
   validates :left_weight, :straight_weight, :right_weight, numericality: { only_integer: true, in: 0..100 }
+  # The simulation shortens a pocket that does not fit the link (Simulation::Graph#pocket_length)
+  validates :right_turn_lane, numericality: { only_integer: true, in: 0..15 }
   validates :to_node, uniqueness: { scope: :from_node }
   validate :nodes_differ
 
