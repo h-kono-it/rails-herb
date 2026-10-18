@@ -1,24 +1,49 @@
-# README
+# rails-herb
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+道路の交通をシミュレーションする Rails アプリ。[Herb](https://herb-tools.dev) と [ReActionView](https://reactionview.dev) を試すための砂場でもある。
 
-Things you may want to cover:
+## 起動
 
-* Ruby version
+Ruby 3.4.11（`.ruby-version`）が入っている前提。
 
-* System dependencies
+```sh
+bin/setup
+```
 
-* Configuration
+依存のインストール、データベースの作成とサンプルの道路網の投入、開発サーバーの起動までまとめて行う。http://localhost:3000 を開く。
 
-* Database creation
+2回目以降はサーバーを起動するだけでいい。
 
-* Database initialization
+```sh
+bin/dev
+```
 
-* How to run the test suite
+サンプルの道路網を作り直すときは `bin/rails db:seed`。
 
-* Services (job queues, cache servers, search engines, etc.)
+## 画面
 
-* Deployment instructions
+### 道路網（トップページ、`/networks/:id`）
 
-* ...
+メインの画面。道路の端から車が入ってきて、交差点で曲がりながら別の端から出ていく。
+
+- **地図**：車の色は速さ（赤が停止、緑が最高速）。交差点は A・B・C…、道路の端は 西1・北2… と呼ぶ。地図の交差点を押すと、その交差点の設定が開く
+- **再生 / 1ステップ進める / 最初に戻す / 乱数を変える**：シミュレーションの操作
+- **交通量タブ**：道路の端ごとの流入量（100ステップあたりの台数）。入りきれない車は入口で待つ
+- **交差点タブ**：信号の有無、1周の長さ、東西に回す青の割合、開始のずらし（オフセット）、入ってくる方向ごとの左折・直進・右折の割合、右折専用レーンの長さ
+- **状況タブ**：交差点ごとの信号の色と止まっている車の数、ランダムな減速の確率
+
+スライダーは離した時点で保存され、シミュレーションを止めずに反映される。
+
+サンプルの道路網は「十字路」「信号なし十字路」「格子 2×2」の3つ。
+
+### Intersection（`/intersection`）
+
+信号付きの十字路1つだけの、最初に作った版。車線の端がつながっていて、出た車は反対側から戻ってくる。
+
+### Ring Road（`/ring`）
+
+1車線の環状道路。何もないところから自然渋滞が生まれて、後ろへ伝わっていく様子を時空間図で見られる。
+
+## 開発
+
+設計やモデル、ReActionView で気をつけることは [docs/development.md](docs/development.md) にまとめてある。
