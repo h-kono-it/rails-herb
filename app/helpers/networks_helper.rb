@@ -59,23 +59,49 @@ module NetworksHelper
     [ to.x - ux * SIGNAL_SETBACK + left_x * offset, to.y - uy * SIGNAL_SETBACK + left_y * offset ]
   end
 
-  # Where a dead end sits on the map, e.g. "西端 (0, 30)".
-  def dead_end_label(node)
-    side =
-      if node.x.zero? then "西端"
-      elsif node.x == Network::SIZE then "東端"
-      elsif node.y.zero? then "北端"
-      elsif node.y == Network::SIZE then "南端"
-      else "端"
+  SIDES = { west: "西", east: "東", north: "北", south: "南" }.freeze
+
+  # Short names used on the map and in every table: junctions are A, B, C…
+  # in reading order, dead ends are named after the edge they sit on (西, or
+  # 西1, 西2… when an edge has several).
+  def node_names(graph)
+    junctions = graph.nodes.values.reject { |node| graph.dead_end?(node.id) }.sort_by { |node| [ node.y, node.x ] }
+    names = junctions.each_with_index.to_h { |node, index| [ node.id, junction_letter(index) ] }
+
+    dead_ends = graph.nodes.values.select { |node| graph.dead_end?(node.id) }
+    dead_ends.group_by { |node| edge_of(node) }.each do |edge, nodes|
+      nodes.sort_by { |node| [ node.x, node.y ] }.each_with_index do |node, index|
+        names[node.id] = nodes.one? ? SIDES.fetch(edge, "端") : "#{SIDES.fetch(edge, "端")}#{index + 1}"
       end
-    "#{side} (#{node.x}, #{node.y})"
+    end
+    names
+  end
+
+  # Dead ends clockwise from the north, then along each edge.
+  def dead_end_order(node)
+    [ %i[north east south west].index(edge_of(node)) || SIDES.size, node.x, node.y ]
+  end
+
+  # Where a node's name sits on the map: junction names up and to the left of
+  # the crossing, dead end names just inside the edge.
+  def name_point(node)
+    case edge_of(node)
+    when :west then [ 2, node.y - 2.6 ]
+    when :east then [ Network::SIZE - 2, node.y + 2.6 ]
+    when :north then [ node.x + 2.6, 2 ]
+    when :south then [ node.x - 2.6, Network::SIZE - 2 ]
+    else [ node.x - 3, node.y - 3 ]
+    end
   end
 
   TURN_LABELS = { left: "左折", straight: "直進", right: "右折" }.freeze
   APPROACHES = %w[北から 東から 南から 西から].freeze
 
-  def junction_label(node)
-    "(#{node.x}, #{node.y})"
+  # Heading for the junction picked in the page, e.g. "交差点 A".
+  def junction_heading(graph, id)
+    junctions = graph.nodes.values.reject { |node| graph.dead_end?(node.id) }.sort_by { |node| [ node.y, node.x ] }
+    node = selected_junction(junctions, id)
+    "交差点 #{node_names(graph)[node.id]}" if node
   end
 
   # The junction picked in the page, or the first one.
@@ -121,6 +147,19 @@ module NetworksHelper
   end
 
   private
+    def junction_letter(index)
+      letters = ("A".."Z").to_a
+      index < letters.size ? letters[index] : "#{letters[index % letters.size]}#{index / letters.size}"
+    end
+
+    def edge_of(node)
+      if node.x.zero? then :west
+      elsif node.x == Network::SIZE then :east
+      elsif node.y.zero? then :north
+      elsif node.y == Network::SIZE then :south
+      end
+    end
+
     def link_geometry(graph, link)
       from, to = graph.nodes.values_at(link.from, link.to)
       length = Math.hypot(to.x - from.x, to.y - from.y)

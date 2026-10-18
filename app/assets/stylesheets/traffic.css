@@ -1,28 +1,48 @@
 :root {
-  --bg: #f7f7f5;
-  --fg: #1d1d1b;
-  --muted: #6b6b66;
+  --bg: #edf0f2;
+  --fg: #18212b;
+  --muted: #5b6672;
   --panel: #ffffff;
-  --line: #d9d9d4;
-  --lane: #2b2b28;
+  --line: #d3d9df;
+  --lane: #3e464f;
+  --sign: #1f5fae;
+  --sign-ink: #ffffff;
+  --asphalt: #262c33;
+  --marking: rgb(255 255 255 / 0.55);
+  --go: #22a04b;
+  --caution: #f0a500;
+  --stop: #d8392b;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161615;
-    --fg: #ececea;
-    --muted: #9a9a94;
-    --panel: #20201e;
-    --line: #3a3a37;
-    --lane: #4a4a46;
+  :root:not([data-theme="light"]) {
+    --bg: #12171c;
+    --fg: #e6eaee;
+    --muted: #94a0ab;
+    --panel: #1b2229;
+    --line: #2f3943;
+    --lane: #4a535d;
+    --sign: #4b8ad6;
+    --asphalt: #0d1114;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #12171c;
+  --fg: #e6eaee;
+  --muted: #94a0ab;
+  --panel: #1b2229;
+  --line: #2f3943;
+  --lane: #4a535d;
+  --sign: #4b8ad6;
+  --asphalt: #0d1114;
 }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font-family: system-ui, -apple-system, "Hiragino Sans", sans-serif;
+  font-family: "BIZ UDPGothic", system-ui, -apple-system, "Hiragino Sans", sans-serif;
 }
 
 .traffic {
@@ -228,9 +248,9 @@ body {
   outline: 2px solid var(--panel);
 }
 
-.is-green { background: hsl(130 70% 40%); }
-.is-yellow { background: hsl(45 95% 50%); }
-.is-red { background: hsl(0 75% 50%); }
+.is-green { background: var(--go); }
+.is-yellow { background: var(--caution); }
+.is-red { background: var(--stop); }
 
 .intersection__lanes {
   width: 100%;
@@ -270,6 +290,12 @@ body {
   display: flex;
   gap: 16px;
   align-items: baseline;
+}
+
+.network-list a {
+  color: var(--sign);
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .network-list span,

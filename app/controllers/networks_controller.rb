@@ -3,7 +3,7 @@ class NetworksController < ApplicationController
   MAX_STEPS = 2_000
 
   def index
-    @networks = Network.order(:id)
+    @networks = Network.order(:id).includes(:nodes, :links)
   end
 
   def show

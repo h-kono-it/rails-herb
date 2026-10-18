@@ -13,16 +13,16 @@ class NetworksTest < ApplicationSystemTestCase
     visit network_path(@network)
     assert_selector "h1", text: "十字路"
 
-    3.times { click_on "1ステップ" }
+    3.times { click_on "1ステップ進める" }
 
-    within(".traffic__stats") { assert_text "ステップ\n3" }
-    assert_selector ".network__car", minimum: 1
+    assert_selector ".board__step", text: "3"
+    assert_selector ".map__car", minimum: 1
   end
 
   test "saves a dead end's inflow from its slider" do
     visit network_path(@network)
 
-    slider = find("input[aria-label='西端 (0, 30)の流入']")
+    slider = find("input[aria-label='西から入ってくる量']")
     slider.set(40)
 
     assert_selector "output", text: "40"
@@ -35,20 +35,23 @@ class NetworksTest < ApplicationSystemTestCase
     from_west = @network.links.find_by!(from_node: @west)
 
     visit network_path(@network)
-    assert_selector "caption", text: "交差点 (30, 30) の進行方向"
+    find("button[aria-label='交差点 A を選ぶ']").click
+    assert_selector "h2", text: "交差点 A"
+    %w[左折 直進 右折].each { |turn| assert_selector "th", text: turn }
 
     # From the west the junction offers left (north) and straight on (east), but no right turn
     assert_no_selector "input[aria-label='西からの右折の重み']"
     find("input[aria-label='西からの左折の重み']").set(80)
 
     assert_equal 80, wait_for { from_west.reload.left_weight == 80 && from_west.left_weight }
-    assert_text "設定 57%" # 80 / (80 + 60)
+    assert_selector ".turns__share", text: "57%" # 80 / (80 + 60)
   end
 
   test "sets a junction's signal plan" do
     center = @network.nodes.find_by!(x: 30, y: 30)
 
     visit network_path(@network)
+    click_on "交差点", exact: true
     assert_text "青時間 東西 16 / 南北 16 ステップ"
 
     find("input[aria-label='サイクル']").set(60)
@@ -66,6 +69,7 @@ class NetworksTest < ApplicationSystemTestCase
     from_west = @network.links.find_by!(from_node: @west)
 
     visit network_path(@network)
+    click_on "交差点", exact: true
     assert_no_selector ".network__pocket"
 
     find("input[aria-label='西からの右折レーンの長さ']").set(10)
