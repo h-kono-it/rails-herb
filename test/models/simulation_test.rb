@@ -5,8 +5,9 @@ class SimulationTest < ActiveSupport::TestCase
   # side street so some links are only a few cells long.
   DEFAULT_WEIGHTS = { left: 20, straight: 60, right: 20 }.freeze
 
-  # weights: { [from, to] => { left:, straight:, right: } } for individual links
-  def graph(signalized: true, inflow: 30, weights: {})
+  # weights: { [from, to] => { left:, straight:, right: } } and
+  # pockets: { [from, to] => cells } for individual links
+  def graph(signalized: true, inflow: 30, weights: {}, pockets: {})
     nodes = [
       Simulation::Node.new(id: 1, x: 30, y: 30, signalized:, inflow: 0),
       Simulation::Node.new(id: 2, x: 0, y: 30, signalized: false, inflow:),
@@ -17,7 +18,7 @@ class SimulationTest < ActiveSupport::TestCase
     ]
     pairs = [ [ 1, 2 ], [ 1, 3 ], [ 1, 4 ], [ 1, 5 ], [ 5, 6 ] ]
     links = pairs.flat_map { |a, b| [ [ a, b ], [ b, a ] ] }.each_with_index.map do |(from, to), id|
-      Simulation::Link.new(id:, from:, to:, speed_limit: 5, turn_weights: weights.fetch([ from, to ], DEFAULT_WEIGHTS))
+      Simulation::Link.new(id:, from:, to:, speed_limit: 5, turn_weights: weights.fetch([ from, to ], DEFAULT_WEIGHTS), right_turn_lane: pockets.fetch([ from, to ], 0))
     end
     Simulation::Graph.new(nodes:, links:)
   end
@@ -26,18 +27,20 @@ class SimulationTest < ActiveSupport::TestCase
     graph.links.values.find { |link| link.from == from && link.to == to }.id
   end
 
-  def build(inflow: 30, signalized: true, weights: {}, **options)
-    Simulation.new(graph: graph(inflow:, signalized:, weights:), slowdown: 0.2, **options)
+  def build(inflow: 30, signalized: true, weights: {}, pockets: {}, **options)
+    Simulation.new(graph: graph(inflow:, signalized:, weights:, pockets:), slowdown: 0.2, **options)
   end
 
+  POCKETS_INTO_CROSSROADS = { [ 2, 1 ] => 10, [ 3, 1 ] => 15, [ 4, 1 ] => 5, [ 5, 1 ] => 15 }.freeze
+
   test "no two cars ever share a cell" do
-    [ 10, 30, 80 ].product([ 1, 2, 3 ]).each do |inflow, seed|
-      simulation = build(inflow:, seed:)
+    [ 10, 30, 80 ].product([ 1, 2, 3 ], [ {}, POCKETS_INTO_CROSSROADS ]).each do |inflow, seed, pockets|
+      simulation = build(inflow:, seed:, pockets:)
 
       800.times do
         simulation.step
-        cells = simulation.cars.map { |car| [ car.link, car.position ] }
-        assert_equal cells.size, cells.uniq.size, "collision at t=#{simulation.time} (inflow=#{inflow}, seed=#{seed})"
+        cells = simulation.cars.map { |car| [ car.link, car.pocket, car.position ] }
+        assert_equal cells.size, cells.uniq.size, "collision at t=#{simulation.time} (inflow=#{inflow}, seed=#{seed}, pockets=#{pockets.any?})"
         simulation.cars.each { |car| assert car.position.between?(0, simulation.graph.length(car.link) - 1) }
       end
     end
@@ -106,8 +109,8 @@ class SimulationTest < ActiveSupport::TestCase
   end
 
   test "right turners never cross while oncoming traffic goes through" do
-    [ true, false ].each do |signalized|
-      simulation = build(inflow: 40, signalized:)
+    [ true, false ].product([ {}, POCKETS_INTO_CROSSROADS ]).each do |signalized, pockets|
+      simulation = build(inflow: 40, signalized:, pockets:)
       rights = 0
 
       1_500.times do
@@ -187,6 +190,52 @@ class SimulationTest < ActiveSupport::TestCase
     assert_equal [ :red, :red ], simulation.phase(1).to_h.values_at(:horizontal, :vertical)
   end
 
+  test "a right-turn pocket keeps straight traffic moving past waiting right turners" do
+    from_west = [ 2, 1 ]
+    # Half the cars from the west turn right, across a steady stream going straight from the east
+    weights = { from_west => { left: 0, straight: 1, right: 1 }, [ 3, 1 ] => { left: 0, straight: 1, right: 0 } }
+
+    straight = [ 0, 10 ].to_h do |cells|
+      simulation = build(inflow: 35, weights:, pockets: { from_west => cells }).run(3_000)
+      [ cells, simulation.turn_count(link_between(simulation.graph, *from_west), :straight) ]
+    end
+
+    assert_operator straight[10], :>, straight[0] * 1.3, "straight on from the west: #{straight}"
+  end
+
+  test "only right turners use the pocket, and it holds no more cars than it has cells" do
+    simulation = build(inflow: 60, pockets: POCKETS_INTO_CROSSROADS)
+    graph = simulation.graph
+    used = false
+
+    1_000.times do
+      simulation.step
+      simulation.cars.each do |car|
+        if car.pocket
+          used = true
+          assert_equal :right, graph.turn(car.link, car.next_link)
+          assert_operator car.position, :>=, graph.pocket_start(car.link)
+        elsif car.next_link && graph.turn(car.link, car.next_link) == :right && graph.pocket_length(car.link).positive?
+          assert_operator car.position, :<, graph.pocket_start(car.link), "right turner #{car.id} drove past the pocket entrance"
+        end
+      end
+      simulation.cars.select(&:pocket).group_by(&:link).each do |link, cars|
+        assert_operator cars.size, :<=, graph.pocket_length(link)
+      end
+    end
+
+    assert used, "no car ever entered a pocket"
+  end
+
+  test "a pocket is shortened to leave room at the start of its link" do
+    g = graph(pockets: { [ 2, 1 ] => 15, [ 1, 5 ] => 15 })
+
+    assert_equal 15, g.pocket_length(link_between(g, 2, 1))
+    assert_equal 15, g.pocket_start(link_between(g, 2, 1))
+    assert_equal 0, g.pocket_length(link_between(g, 1, 5)), "a 3-cell link has no room for a pocket"
+    assert_equal 0, g.pocket_length(link_between(g, 1, 2))
+  end
+
   test "dead ends are where cars enter and leave" do
     g = graph
 
@@ -214,5 +263,6 @@ class SimulationTest < ActiveSupport::TestCase
     assert_equal [ 60, 70, 5 ], graph.nodes[b.id].to_h.values_at(:cycle, :split, :offset)
     assert_equal [ 15, 0 ], graph.nodes.values_at(a.id, b.id).map(&:inflow)
     assert_equal({ left: 20, straight: 60, right: 20 }, graph.links.values.first.turn_weights)
+    assert_equal 0, graph.links.values.first.right_turn_lane
   end
 end

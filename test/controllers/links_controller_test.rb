@@ -14,6 +14,20 @@ class LinksControllerTest < ActionDispatch::IntegrationTest
     assert_equal({ left: 20, straight: 60, right: 70 }, @link.reload.turn_weights)
   end
 
+  test "sets the length of a right-turn lane" do
+    patch link_path(@link), params: { link: { right_turn_lane: 8 } }, as: :json
+
+    assert_response :no_content
+    assert_equal 8, @link.reload.right_turn_lane
+  end
+
+  test "rejects a right-turn lane longer than 15 cells" do
+    patch link_path(@link), params: { link: { right_turn_lane: 16 } }, as: :json
+
+    assert_response :unprocessable_content
+    assert_equal 0, @link.reload.right_turn_lane
+  end
+
   test "rejects a weight out of range" do
     patch link_path(@link), params: { link: { left_weight: -1 } }, as: :json
 

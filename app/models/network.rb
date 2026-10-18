@@ -20,7 +20,10 @@ class Network < ApplicationRecord
           id: node.id, x: node.x, y: node.y, inflow: node.inflow,
           signalized: node.signalized, cycle: node.cycle, split: node.split, offset: node.offset
         ) },
-      links: links.map { |link| Simulation::Link.new(id: link.id, from: link.from_node_id, to: link.to_node_id, speed_limit: link.speed_limit, turn_weights: link.turn_weights) }
+      links: links.map { |link| Simulation::Link.new(
+          id: link.id, from: link.from_node_id, to: link.to_node_id, speed_limit: link.speed_limit,
+          turn_weights: link.turn_weights, right_turn_lane: link.right_turn_lane
+        ) }
     )
   end
 end

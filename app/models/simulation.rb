@@ -17,6 +17,12 @@
 #   is about to enter the junction, holding up everyone behind it. On yellow
 #   the oncoming cars have stopped, and a right turner waiting at the line
 #   goes.
+# - A link may end in a right-turn pocket: over its last cells there is a
+#   second lane, next to the oncoming traffic, for cars turning right. A right
+#   turner moves into it when it reaches the pocket and the pocket has room,
+#   otherwise it waits at the pocket entrance and blocks the lane as before.
+#   Inside the pocket section each lane only follows its own cars, so a right
+#   turner waiting for a gap no longer holds up cars going straight or left.
 # - When several cars want the same lane in one step, left turns go first,
 #   then straight on, then right turns, in random order within each. A car
 #   that does not fit waits at the end of its own link.
@@ -30,8 +36,12 @@ class Simulation
     def initialize(cycle: 40, split: 50, offset: 0, **) = super
   end
   # turn_weights: { left:, straight:, right: } relative weights at the junction this link leads into
-  Link = Data.define(:id, :from, :to, :speed_limit, :turn_weights)
-  Car = Data.define(:id, :link, :position, :velocity, :next_link)
+  # right_turn_lane: cells of right-turn pocket at the end of the link (0 = none)
+  Link = Data.define(:id, :from, :to, :speed_limit, :turn_weights, :right_turn_lane) do
+    def initialize(right_turn_lane: 0, **) = super
+  end
+  # pocket: whether the car is in its link's right-turn pocket
+  Car = Data.define(:id, :link, :position, :velocity, :next_link, :pocket)
 
   class Graph
     attr_reader :nodes, :links
@@ -44,9 +54,21 @@ class Simulation
       @lengths = @links.transform_values { |link| [ distance(link).round, 1 ].max }
     end
 
+    # Cells kept free of any pocket at the start of a link, so cars entering
+    # the link (at most a few cells in) are always in the main lane
+    POCKET_CLEARANCE = 6
+
     def outgoing(node_id) = @outgoing.fetch(node_id, [])
     def incoming(node_id) = @incoming.fetch(node_id, [])
     def length(link_id) = @lengths.fetch(link_id)
+
+    # Cells of right-turn pocket at the end of a link, shortened to fit.
+    def pocket_length(link_id)
+      [ @links.fetch(link_id).right_turn_lane, length(link_id) - POCKET_CLEARANCE ].min.clamp(0..)
+    end
+
+    # First cell of the pocket; equal to the link length when there is none.
+    def pocket_start(link_id) = length(link_id) - pocket_length(link_id)
 
     def dead_end?(node_id)
       (outgoing(node_id).map(&:to) + incoming(node_id).map(&:from)).uniq.size == 1
@@ -131,22 +153,31 @@ class Simulation
     lanes.each do |link_id, cars|
       link = @graph.links.fetch(link_id)
       length = @graph.length(link_id)
+      pocket_start = @graph.pocket_start(link_id)
+      main, pocket = cars.partition { |car| !car.pocket }
 
-      cars.each_with_index do |car, index|
-        leader = cars[index + 1]
-        gap = leader ? leader.position - car.position - 1 : length - 1 - car.position + room_after(car, link, lanes)
+      [ main, pocket ].each do |lane|
+        lane.each_with_index do |car, index|
+          leader = lane[index + 1]
+          heading_for_pocket = pocket_start < length && !car.pocket && car.position < pocket_start && turning_right?(car)
+          gap =
+            if heading_for_pocket then pocket_entry_room(car, leader, pocket, pocket_start, length)
+            elsif leader then leader.position - car.position - 1
+            else length - 1 - car.position + room_after(car, link, lanes)
+            end
 
-        velocity = [ car.velocity + 1, link.speed_limit, gap ].min
-        velocity = [ velocity - 1, 0 ].max if @random.rand < @slowdown
-        position = car.position + velocity
+          velocity = [ car.velocity + 1, link.speed_limit, gap ].min
+          velocity = [ velocity - 1, 0 ].max if @random.rand < @slowdown
+          position = car.position + velocity
 
-        if position < length
-          staying << car.with(position:, velocity:)
-        elsif car.next_link.nil?
-          exited += 1
-          @left[link.to] += 1
-        else
-          crossing << [ car, position - length, velocity ]
+          if position < length
+            staying << car.with(position:, velocity:, pocket: car.pocket || (heading_for_pocket && position >= pocket_start))
+          elsif car.next_link.nil?
+            exited += 1
+            @left[link.to] += 1
+          else
+            crossing << [ car, position - length, velocity ]
+          end
         end
       end
     end
@@ -217,6 +248,21 @@ class Simulation
   end
 
   private
+    def turning_right?(car)
+      car.next_link.present? && @graph.turn(car.link, car.next_link) == :right
+    end
+
+    # How far a right turner in the main lane may go when its link has a
+    # pocket: up to the main-lane car ahead if that one is before the pocket,
+    # otherwise on into the pocket up to the last car in it. With the pocket
+    # entrance taken it stops just before the pocket.
+    def pocket_entry_room(car, leader, pocket, pocket_start, length)
+      return leader.position - car.position - 1 if leader && leader.position < pocket_start
+
+      last_free = pocket.first ? pocket.first.position - 1 : length - 1
+      last_free - car.position
+    end
+
     # Free cells a lane leader may use past the end of its link.
     def room_after(car, link, lanes)
       return link.speed_limit if car.next_link.nil?
@@ -248,7 +294,7 @@ class Simulation
           tails[car.next_link] = limit
           @turns[[ car.link, @graph.turn(car.link, car.next_link) ]] += 1
           link = @graph.links.fetch(car.next_link)
-          car.with(link: link.id, position: limit, velocity: [ velocity, limit + 1 ].min, next_link: choose_next(link))
+          car.with(link: link.id, position: limit, velocity: [ velocity, limit + 1 ].min, next_link: choose_next(link), pocket: false)
         end
       end
     end
@@ -263,13 +309,14 @@ class Simulation
       end
     end
 
-    # Whether the front car on the opposing link is about to enter the
-    # junction this step, going straight or turning left.
+    # Whether the front car in the opposing main lane is about to enter the
+    # junction this step, going straight or turning left. Cars in an opposing
+    # pocket only ever turn right, which does not cross our path.
     def oncoming?(link, lanes)
       opposing = @graph.opposing(link.id)
       return false unless opposing && light(opposing) == :green
 
-      leader = lanes[opposing.id]&.last
+      leader = lanes[opposing.id]&.reverse&.find { |car| !car.pocket }
       return false unless leader&.next_link
       return false if @graph.turn(opposing.id, leader.next_link) == :right
 
@@ -278,7 +325,7 @@ class Simulation
     end
 
     def spawn
-      taken = @cars.select { |car| car.position.zero? }.map(&:link).to_set
+      taken = @cars.select { |car| car.position.zero? && !car.pocket }.map(&:link).to_set
 
       @graph.entries.each do |link|
         @waiting[link.from] += 1 if @random.rand < @graph.nodes.fetch(link.from).inflow / 100.0
@@ -286,7 +333,7 @@ class Simulation
 
         @waiting[link.from] -= 1
         @entered[link.from] += 1
-        @cars << Car.new(id: @next_id, link: link.id, position: 0, velocity: 0, next_link: choose_next(link))
+        @cars << Car.new(id: @next_id, link: link.id, position: 0, velocity: 0, next_link: choose_next(link), pocket: false)
         @next_id += 1
       end
     end

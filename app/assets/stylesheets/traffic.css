@@ -439,3 +439,8 @@ body {
 .network__signal-settings .network__note {
   margin: 0;
 }
+
+/* Extra lane width along a right-turn pocket */
+.network__pocket {
+  opacity: 0.85;
+}

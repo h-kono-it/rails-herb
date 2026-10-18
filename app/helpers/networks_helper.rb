@@ -1,6 +1,9 @@
 module NetworksHelper
   # Cars drive this far left of the road's centre line, in cells (traffic keeps left)
   LANE_OFFSET = 0.5
+  # Where a right-turn pocket starts, the main lane moves one cell further
+  # left and the pocket takes its place next to the oncoming lane
+  POCKET_SHIFT = 1.0
   # Signal heads sit this far back from the junction and out to the kerb, in cells
   SIGNAL_SETBACK = 1.5
   SIGNAL_OFFSET = 1.6
@@ -21,19 +24,39 @@ module NetworksHelper
     "left: #{map_percent(x)}%; top: #{map_percent(y)}%"
   end
 
-  # Where a car is drawn: the middle of its cell, shifted to the left lane.
+  # Where a car is drawn: the middle of its cell, shifted to the left lane,
+  # or one lane further left where its link has a pocket and it is not in it.
   def car_point(simulation, car)
-    from, to, ux, uy = link_geometry(simulation.graph, simulation.graph.links.fetch(car.link))
-    along = (car.position + 0.5) / simulation.graph.length(car.link) * Math.hypot(to.x - from.x, to.y - from.y)
+    graph = simulation.graph
+    from, to, ux, uy = link_geometry(graph, graph.links.fetch(car.link))
+    along = (car.position + 0.5) / graph.length(car.link) * Math.hypot(to.x - from.x, to.y - from.y)
+    beside_pocket = !car.pocket && car.position >= graph.pocket_start(car.link)
+    offset = LANE_OFFSET + (beside_pocket ? POCKET_SHIFT : 0)
     left_x, left_y = uy, -ux
-    [ from.x + ux * along + left_x * LANE_OFFSET, from.y + uy * along + left_y * LANE_OFFSET ]
+    [ from.x + ux * along + left_x * offset, from.y + uy * along + left_y * offset ]
   end
 
-  # Where the signal head for a link into a junction is drawn.
+  # Inline style for the extra lane width along a link's right-turn pocket:
+  # a one-cell strip on the left edge of the road, from the pocket start to
+  # the junction.
+  def pocket_style(graph, link)
+    from, to, ux, uy = link_geometry(graph, link)
+    distance = Math.hypot(to.x - from.x, to.y - from.y)
+    start = graph.pocket_start(link.id).fdiv(graph.length(link.id)) * distance
+    centre = 1 + POCKET_SHIFT / 2 # just outside the two-cell road
+    x = from.x + ux * start + uy * centre
+    y = from.y + uy * start - ux * centre
+    angle = Math.atan2(uy, ux) * 180 / Math::PI
+    "left: #{map_percent(x)}%; top: #{map_percent(y - POCKET_SHIFT / 2)}%; width: #{map_percent(distance - start)}%; height: #{map_percent(POCKET_SHIFT)}%; rotate: #{angle.round(2)}deg"
+  end
+
+  # Where the signal head for a link into a junction is drawn, clear of the
+  # extra lane width of a pocket.
   def signal_point(graph, link)
     _from, to, ux, uy = link_geometry(graph, link)
+    offset = SIGNAL_OFFSET + (graph.pocket_length(link.id).positive? ? POCKET_SHIFT : 0)
     left_x, left_y = uy, -ux
-    [ to.x - ux * SIGNAL_SETBACK + left_x * SIGNAL_OFFSET, to.y - uy * SIGNAL_SETBACK + left_y * SIGNAL_OFFSET ]
+    [ to.x - ux * SIGNAL_SETBACK + left_x * offset, to.y - uy * SIGNAL_SETBACK + left_y * offset ]
   end
 
   # Where a dead end sits on the map, e.g. "西端 (0, 30)".

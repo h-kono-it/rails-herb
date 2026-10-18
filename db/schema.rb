@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_18_132425) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_18_132516) do
   create_table "links", force: :cascade do |t|
     t.integer "network_id", null: false
     t.integer "from_node_id", null: false
@@ -21,6 +21,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_18_132425) do
     t.integer "left_weight", default: 20, null: false
     t.integer "straight_weight", default: 60, null: false
     t.integer "right_weight", default: 20, null: false
+    t.integer "right_turn_lane", default: 0, null: false
     t.index ["from_node_id", "to_node_id"], name: "index_links_on_from_node_id_and_to_node_id", unique: true
     t.index ["from_node_id"], name: "index_links_on_from_node_id"
     t.index ["network_id"], name: "index_links_on_network_id"
