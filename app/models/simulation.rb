@@ -4,9 +4,11 @@
 # past the end of its link continues on the next one in the same step.
 #
 # - Dead ends (nodes with a single neighbour) are where cars enter and leave.
-#   Every step each entering lane spawns a car with probability `inflow`.
-# - At a junction a car turns onto any other road at random, never back the
-#   way it came unless there is no other road.
+#   Each dead end sends in `inflow` cars per 100 steps on average. Cars that
+#   arrive while the entry cell is taken wait outside the network, in order.
+# - At a junction a car picks its next road by the turn weights of the link
+#   it arrives on (left, straight, right), spread over the roads the junction
+#   offers. It never goes back the way it came unless there is no other road.
 # - At a signalized junction a car may only cross on green. Links running
 #   left-right follow the horizontal phase, the others the vertical one.
 # - Turning right crosses the oncoming lane (traffic keeps left), so a right
@@ -20,8 +22,10 @@
 #
 # Like the other models it is deterministic for a given seed.
 class Simulation
-  Node = Data.define(:id, :x, :y, :signalized)
-  Link = Data.define(:id, :from, :to, :speed_limit)
+  # inflow: cars per 100 steps entering at this node, if it is a dead end
+  Node = Data.define(:id, :x, :y, :signalized, :inflow)
+  # turn_weights: { left:, straight:, right: } relative weights at the junction this link leads into
+  Link = Data.define(:id, :from, :to, :speed_limit, :turn_weights)
   Car = Data.define(:id, :link, :position, :velocity, :next_link)
 
   class Graph
@@ -95,9 +99,8 @@ class Simulation
 
   attr_reader :graph, :cars, :time, :signal, :total_exits
 
-  def initialize(graph:, inflow:, cycle:, split:, slowdown:, seed: 1)
+  def initialize(graph:, cycle:, split:, slowdown:, seed: 1)
     @graph = graph
-    @inflow = inflow
     @slowdown = slowdown
     @signal = SignalPlan.new(cycle:, split:)
     @random = Random.new(seed)
@@ -106,6 +109,10 @@ class Simulation
     @time = 0
     @exits = []
     @total_exits = 0
+    @waiting = Hash.new(0)
+    @entered = Hash.new(0)
+    @left = Hash.new(0)
+    @turns = Hash.new(0)
   end
 
   def step
@@ -130,6 +137,7 @@ class Simulation
           staying << car.with(position:, velocity:)
         elsif car.next_link.nil?
           exited += 1
+          @left[link.to] += 1
         else
           crossing << [ car, position - length, velocity ]
         end
@@ -163,6 +171,15 @@ class Simulation
   end
 
   def total_spawned = @next_id
+
+  # Per dead end: cars waiting outside to get in, cars that got in, cars that left
+  def waiting_at(node_id) = @waiting[node_id]
+  def entered_at(node_id) = @entered[node_id]
+  def left_at(node_id) = @left[node_id]
+  def total_waiting = @waiting.values.sum
+
+  # How many cars arriving on a link have gone each way at its junction.
+  def turn_count(link_id, turn) = @turns[[ link_id, turn ]]
 
   # Cars that left the network in the last THROUGHPUT_WINDOW steps.
   def recent_exits
@@ -214,6 +231,7 @@ class Simulation
           car.with(position: @graph.length(car.link) - 1, velocity: 0)
         else
           tails[car.next_link] = limit
+          @turns[[ car.link, @graph.turn(car.link, car.next_link) ]] += 1
           link = @graph.links.fetch(car.next_link)
           car.with(link: link.id, position: limit, velocity: [ velocity, limit + 1 ].min, next_link: choose_next(link))
         end
@@ -248,9 +266,11 @@ class Simulation
       taken = @cars.select { |car| car.position.zero? }.map(&:link).to_set
 
       @graph.entries.each do |link|
-        next unless @random.rand < @inflow
-        next if taken.include?(link.id)
+        @waiting[link.from] += 1 if @random.rand < @graph.nodes.fetch(link.from).inflow / 100.0
+        next if @waiting[link.from].zero? || taken.include?(link.id)
 
+        @waiting[link.from] -= 1
+        @entered[link.from] += 1
         @cars << Car.new(id: @next_id, link: link.id, position: 0, velocity: 0, next_link: choose_next(link))
         @next_id += 1
       end
@@ -260,7 +280,22 @@ class Simulation
       return nil if @graph.dead_end?(link.to)
 
       options = @graph.outgoing(link.to).reject { |other| other.to == link.from }
-      options = @graph.outgoing(link.to) if options.empty?
-      options.sample(random: @random).id
+      return @graph.outgoing(link.to).sample(random: @random).id if options.empty?
+
+      # Each turn's weight is shared by the roads that make that turn
+      by_turn = options.group_by { |other| @graph.turn(link.id, other.id) }
+      weighted = by_turn.flat_map do |turn, roads|
+        roads.map { |road| [ road, link.turn_weights.fetch(turn, 0).fdiv(roads.size) ] }
+      end
+      total = weighted.sum { |_, weight| weight }
+      return options.sample(random: @random).id if total.zero?
+
+      pick = @random.rand * total
+      weighted.each do |road, weight|
+        return road.id if pick < weight
+
+        pick -= weight
+      end
+      weighted.last.first.id
     end
 end

@@ -12,7 +12,6 @@ class NetworksController < ApplicationController
     @step = herb_state("step", 0).to_i.clamp(0, MAX_STEPS)
     @simulation = Simulation.new(
       graph: @network.graph,
-      inflow: herb_state("inflow", 15).to_i / 100.0,
       cycle: herb_state("cycle", 40).to_i,
       split: herb_state("split", 50).to_i / 100.0,
       slowdown: herb_state("slowdown", 15).to_i / 100.0,

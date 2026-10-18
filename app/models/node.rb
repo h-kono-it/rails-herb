@@ -5,4 +5,5 @@ class Node < ApplicationRecord
 
   validates :x, :y, numericality: { only_integer: true, in: 0..Network::SIZE }
   validates :y, uniqueness: { scope: [ :network_id, :x ] }
+  validates :inflow, numericality: { only_integer: true, in: 0..100 }
 end

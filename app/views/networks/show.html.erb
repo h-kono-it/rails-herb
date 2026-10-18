@@ -1,9 +1,12 @@
 <%# herb:slots server %>
-<%# herb:state (step: 0, inflow: 15, cycle: 40, split: 50, slowdown: 15, seed: 1, playing: false) %>
+<%# herb:state (step: 0, junction: 0, cycle: 40, split: 50, slowdown: 15, seed: 1, playing: false) %>
 <%# Simulation inputs are read through helpers, which the client cannot evaluate, so changing them asks the server to re-run the simulation %>
 <% content_for :title, @network.name %>
 <% graph = @simulation.graph %>
 <% junctions = graph.nodes.values.select(&:signalized) %>
+<% junction_nodes = graph.nodes.values.reject { |node| graph.dead_end?(node.id) }.sort_by { |node| [ node.y, node.x ] } %>
+<% selected = selected_junction(junction_nodes, junction) %>
+<% dead_ends = graph.entries.map { |link| graph.nodes.fetch(link.from) }.sort_by { |node| [ node.x, node.y ] } %>
 
 <main class="traffic" data-controller="autoplay">
   <header class="traffic__header">
@@ -22,11 +25,6 @@
       <button type="button" data-herb-reset="step">リセット</button>
       <button type="button" data-herb-increment="seed">別の乱数</button>
     </div>
-
-    <label class="traffic__slider">
-      <span>流入（端ごと・毎ステップ） <output><%= number_to_percentage(inflow, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
-      <input type="range" min="0" max="60" step="1" value="<%= inflow %>" autocomplete="off" data-herb-set="inflow=$value">
-    </label>
 
     <label class="traffic__slider">
       <span>信号サイクル <output><%= number_with_delimiter(cycle) %> ステップ</output></span> <%# herb:disable herb-state-valid-reads %>
@@ -51,6 +49,7 @@
       <div><dt>平均速度</dt><dd><%= number_with_precision(@simulation.average_velocity, precision: 2) %> / 5</dd></div>
       <div><dt>流出（直近100ステップ）</dt><dd><%= @simulation.recent_exits %> 台</dd></div>
       <div><dt>累計 流入 / 流出</dt><dd><%= @simulation.total_spawned %> / <%= @simulation.total_exits %></dd></div>
+      <div><dt>入口待ち</dt><dd><%= @simulation.total_waiting %> 台</dd></div>
       <div><dt>seed</dt><dd><%= number_with_delimiter(seed) %></dd></div> <%# herb:disable herb-state-valid-reads %>
     </dl>
   </section>
@@ -86,30 +85,98 @@
       <figcaption>色 = 速度（赤ほど遅い）。枠付き = 右折待ち。交差点手前の点が信号</figcaption>
     </figure>
 
-    <figure class="traffic__figure">
-      <% if junctions.any? %>
-        <table class="intersection__lanes">
+    <div class="network__panels">
+      <figure class="traffic__figure">
+        <table class="intersection__lanes network__ends">
           <thead>
-            <tr><th scope="col">信号交差点</th><th scope="col">東西</th><th scope="col">南北</th><th scope="col">待ち台数</th><th scope="col">右折待ち</th></tr>
+            <tr><th scope="col">道路の端</th><th scope="col">流入（台/100ステップ）</th><th scope="col">流入</th><th scope="col">流出</th><th scope="col">入口待ち</th></tr>
           </thead>
           <tbody>
-            <% junctions.each do |node| %>
+            <% dead_ends.each do |node| %>
               <%# herb:key node.id %>
-              <% phase = @simulation.signal.phase(@simulation.time) %>
-              <tr>
-                <th scope="row">(<%= node.x %>, <%= node.y %>)</th>
-                <td><span class="intersection__badge <%= light_class(phase.horizontal) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.horizontal] %></span></td>
-                <td><span class="intersection__badge <%= light_class(phase.vertical) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.vertical] %></span></td>
-                <td><%= graph.incoming(node.id).sum { |link| @simulation.queue_length(link.id) } %> 台</td>
-                <td><%= graph.incoming(node.id).sum { |link| @simulation.waiting_to_turn_right(link.id) } %> 台</td>
+              <tr data-controller="autosave" data-autosave-url-value="<%= node_path(node.id) %>" data-autosave-param-value="node[inflow]">
+                <th scope="row"><%= dead_end_label(node) %></th>
+                <td>
+                  <label class="network__inflow">
+                    <input type="range" min="0" max="100" step="1" value="<%= node.inflow %>" autocomplete="off" aria-label="<%= dead_end_label(node) %>の流入" data-action="input->autosave#preview change->autosave#save">
+                    <output data-autosave-target="output"><%= node.inflow %></output>
+                  </label>
+                </td>
+                <td><%= @simulation.entered_at(node.id) %></td>
+                <td><%= @simulation.left_at(node.id) %></td>
+                <td><%= @simulation.waiting_at(node.id) %></td>
               </tr>
             <% end %>
           </tbody>
         </table>
-        <figcaption>待ち台数 = 交差点に向かう車線で止まっている台数。右折待ち = 対向車が途切れるのを停止線で待っている台数。全交差点が同じタイミングで切り替わる</figcaption>
-      <% else %>
-        <p class="network__note">信号のない道路網。右折車は対向車が途切れるのを待つ。同じ車線に入ろうとする車は、左折・直進・右折の順に1台ずつ進む。</p>
+        <figcaption>流入は保存される（スライダーを離したとき）。入口待ち = 入口が詰まっていて道路に入れず、外で待っている台数</figcaption>
+      </figure>
+
+      <% if selected %>
+        <figure class="traffic__figure">
+          <div class="network-tabs" role="group" aria-label="交差点を選ぶ">
+            <% junction_nodes.each do |node| %>
+              <%# herb:key node.id %>
+              <button type="button" data-herb-set="junction=<%= node.id %>" aria-pressed="<%= node == selected %>"><%= junction_label(node) %></button>
+            <% end %>
+          </div>
+          <table class="intersection__lanes network__turns">
+            <caption>交差点 <%= junction_label(selected_junction(junction_nodes, junction)) %> の進行方向</caption> <%# herb:disable herb-state-valid-reads %>
+            <thead>
+              <tr><th scope="col">進入方向</th><% Link::TURNS.each do |turn| %><th scope="col"><%= NetworksHelper::TURN_LABELS[turn] %></th><% end %></tr>
+            </thead>
+            <tbody>
+              <% graph.incoming(selected.id).sort_by { |link| NetworksHelper::APPROACHES.index(approach_label(graph, link)) }.each do |link| %>
+                <%# herb:key link.id %>
+                <% offered = offered_turns(graph, link) %>
+                <tr>
+                  <th scope="row"><%= approach_label(graph, link) %></th>
+                  <% Link::TURNS.each do |turn| %>
+                    <%# herb:key turn %>
+                    <td>
+                      <% if offered.include?(turn) %>
+                        <label class="network__weight" data-controller="autosave" data-autosave-url-value="<%= link_path(link.id) %>" data-autosave-param-value="link[<%= turn %>_weight]">
+                          <input type="range" min="0" max="100" step="1" value="<%= link.turn_weights[turn] %>" autocomplete="off" aria-label="<%= approach_label(graph, link) %>の<%= NetworksHelper::TURN_LABELS[turn] %>の重み" data-action="change->autosave#save">
+                          <span>設定 <%= turn_share(link, turn, offered) %>% / 実績 <%= actual_share(@simulation, link, turn) || "—" %>%</span>
+                        </label>
+                      <% else %>
+                        <span class="network__muted">—</span>
+                      <% end %>
+                    </td>
+                  <% end %>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <figcaption>重み（0〜100）は、その交差点で実際に行ける方向だけで割り振る。スライダーを離すと保存される。実績 = これまでにその方向へ進んだ割合</figcaption>
+        </figure>
       <% end %>
-    </figure>
+
+      <figure class="traffic__figure">
+        <% if junctions.any? %>
+          <table class="intersection__lanes">
+            <thead>
+              <tr><th scope="col">信号交差点</th><th scope="col">東西</th><th scope="col">南北</th><th scope="col">待ち台数</th><th scope="col">右折待ち</th></tr>
+            </thead>
+            <tbody>
+              <% junctions.each do |node| %>
+                <%# herb:key node.id %>
+                <% phase = @simulation.signal.phase(@simulation.time) %>
+                <tr>
+                  <th scope="row">(<%= node.x %>, <%= node.y %>)</th>
+                  <td><span class="intersection__badge <%= light_class(phase.horizontal) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.horizontal] %></span></td>
+                  <td><span class="intersection__badge <%= light_class(phase.vertical) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.vertical] %></span></td>
+                  <td><%= graph.incoming(node.id).sum { |link| @simulation.queue_length(link.id) } %> 台</td>
+                  <td><%= graph.incoming(node.id).sum { |link| @simulation.waiting_to_turn_right(link.id) } %> 台</td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+          <figcaption>待ち台数 = 交差点に向かう車線で止まっている台数。右折待ち = 対向車が途切れるのを停止線で待っている台数。全交差点が同じタイミングで切り替わる</figcaption>
+        <% else %>
+          <p class="network__note">信号のない道路網。右折車は対向車が途切れるのを待つ。同じ車線に入ろうとする車は、左折・直進・右折の順に1台ずつ進む。</p>
+        <% end %>
+      </figure>
+    </div>
   </div>
 </main>

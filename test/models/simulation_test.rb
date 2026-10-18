@@ -3,18 +3,21 @@ require "test_helper"
 class SimulationTest < ActiveSupport::TestCase
   # A crossroads at (30, 30) with dead ends on all four sides, plus a short
   # side street so some links are only a few cells long.
-  def graph(signalized: true)
+  DEFAULT_WEIGHTS = { left: 20, straight: 60, right: 20 }.freeze
+
+  # weights: { [from, to] => { left:, straight:, right: } } for individual links
+  def graph(signalized: true, inflow: 30, weights: {})
     nodes = [
-      Simulation::Node.new(id: 1, x: 30, y: 30, signalized:),
-      Simulation::Node.new(id: 2, x: 0, y: 30, signalized: false),
-      Simulation::Node.new(id: 3, x: 60, y: 30, signalized: false),
-      Simulation::Node.new(id: 4, x: 30, y: 0, signalized: false),
-      Simulation::Node.new(id: 5, x: 30, y: 33, signalized: false),
-      Simulation::Node.new(id: 6, x: 33, y: 33, signalized: false)
+      Simulation::Node.new(id: 1, x: 30, y: 30, signalized:, inflow: 0),
+      Simulation::Node.new(id: 2, x: 0, y: 30, signalized: false, inflow:),
+      Simulation::Node.new(id: 3, x: 60, y: 30, signalized: false, inflow:),
+      Simulation::Node.new(id: 4, x: 30, y: 0, signalized: false, inflow:),
+      Simulation::Node.new(id: 5, x: 30, y: 33, signalized: false, inflow: 0),
+      Simulation::Node.new(id: 6, x: 33, y: 33, signalized: false, inflow:)
     ]
     pairs = [ [ 1, 2 ], [ 1, 3 ], [ 1, 4 ], [ 1, 5 ], [ 5, 6 ] ]
     links = pairs.flat_map { |a, b| [ [ a, b ], [ b, a ] ] }.each_with_index.map do |(from, to), id|
-      Simulation::Link.new(id:, from:, to:, speed_limit: 5)
+      Simulation::Link.new(id:, from:, to:, speed_limit: 5, turn_weights: weights.fetch([ from, to ], DEFAULT_WEIGHTS))
     end
     Simulation::Graph.new(nodes:, links:)
   end
@@ -23,12 +26,12 @@ class SimulationTest < ActiveSupport::TestCase
     graph.links.values.find { |link| link.from == from && link.to == to }.id
   end
 
-  def build(**options)
-    Simulation.new(graph: graph, inflow: 0.3, cycle: 30, split: 0.5, slowdown: 0.2, **options)
+  def build(inflow: 30, signalized: true, weights: {}, **options)
+    Simulation.new(graph: graph(inflow:, signalized:, weights:), cycle: 30, split: 0.5, slowdown: 0.2, **options)
   end
 
   test "no two cars ever share a cell" do
-    [ 0.1, 0.3, 0.8 ].product([ 1, 2, 3 ]).each do |inflow, seed|
+    [ 10, 30, 80 ].product([ 1, 2, 3 ]).each do |inflow, seed|
       simulation = build(inflow:, seed:)
 
       800.times do
@@ -41,14 +44,39 @@ class SimulationTest < ActiveSupport::TestCase
   end
 
   test "every car that entered is either still on the road or has left" do
-    simulation = build(inflow: 0.5).run(1_000)
+    simulation = build(inflow: 50).run(1_000)
 
     assert_operator simulation.total_exits, :>, 0
     assert_equal simulation.total_spawned, simulation.total_exits + simulation.cars.size
+    entries = simulation.graph.entries.map(&:from)
+    assert_equal simulation.total_spawned, entries.sum { |id| simulation.entered_at(id) }
+    assert_equal simulation.total_exits, entries.sum { |id| simulation.left_at(id) }
+  end
+
+  test "each dead end sends in about its inflow" do
+    simulation = build(inflow: 20, slowdown: 0).run(2_000)
+
+    simulation.graph.entries.each do |link|
+      arrived = simulation.entered_at(link.from) + simulation.waiting_at(link.from)
+      assert_in_delta 400, arrived, 80, "dead end #{link.from} saw #{arrived} cars in 2,000 steps"
+    end
+  end
+
+  test "cars that cannot get in wait outside instead of disappearing" do
+    simulation = build(inflow: 100).run(500)
+
+    assert_operator simulation.total_waiting, :>, 0
+  end
+
+  test "a dead end with no inflow sends nobody" do
+    simulation = build(inflow: 0).run(300)
+
+    assert_equal 0, simulation.total_spawned
+    assert_equal 0, simulation.total_waiting
   end
 
   test "cars cross a signalized junction on green, or on yellow to turn right" do
-    simulation = build(inflow: 0.5)
+    simulation = build(inflow: 50)
 
     600.times do
       before = simulation.cars.to_h { |car| [ car.id, car ] }
@@ -79,7 +107,7 @@ class SimulationTest < ActiveSupport::TestCase
 
   test "right turners never cross while oncoming traffic goes through" do
     [ true, false ].each do |signalized|
-      simulation = Simulation.new(graph: graph(signalized:), inflow: 0.4, cycle: 30, split: 0.5, slowdown: 0.2)
+      simulation = build(inflow: 40, signalized:)
       rights = 0
 
       1_500.times do
@@ -104,6 +132,34 @@ class SimulationTest < ActiveSupport::TestCase
     end
   end
 
+  test "cars split at a junction by the turn weights of the link they arrive on" do
+    from_west = [ 2, 1 ]
+    simulation = build(inflow: 30, weights: { from_west => { left: 1, straight: 0, right: 3 } }).run(2_000)
+    link = link_between(simulation.graph, *from_west)
+
+    left, straight, right = %i[left straight right].map { |turn| simulation.turn_count(link, turn) }
+    assert_equal 0, straight
+    assert_in_delta 0.75, right.fdiv(left + right), 0.08
+  end
+
+  test "weights of turns a junction does not offer are ignored" do
+    # Node 5 is a bend: coming down from the crossroads, the only way on is left
+    into_bend = [ 1, 5 ]
+    simulation = build(inflow: 30, weights: { into_bend => { left: 1, straight: 100, right: 100 } }).run(1_000)
+    link = link_between(simulation.graph, *into_bend)
+
+    assert_operator simulation.turn_count(link, :left), :>, 0
+    assert_equal 0, simulation.turn_count(link, :straight) + simulation.turn_count(link, :right)
+  end
+
+  test "all-zero weights fall back to an even split" do
+    from_west = [ 2, 1 ]
+    simulation = build(inflow: 30, weights: { from_west => { left: 0, straight: 0, right: 0 } }).run(1_000)
+    link = link_between(simulation.graph, *from_west)
+
+    %i[left straight right].each { |turn| assert_operator simulation.turn_count(link, turn), :>, 0, turn }
+  end
+
   test "dead ends are where cars enter and leave" do
     g = graph
 
@@ -120,7 +176,7 @@ class SimulationTest < ActiveSupport::TestCase
   test "a network turns into a simulation graph" do
     network = Network.create!(name: "test")
     a = network.nodes.create!(x: 0, y: 0)
-    b = network.nodes.create!(x: 10, y: 0, signalized: true)
+    b = network.nodes.create!(x: 10, y: 0, signalized: true, inflow: 0)
     network.connect(a, b)
 
     graph = network.graph
@@ -128,5 +184,7 @@ class SimulationTest < ActiveSupport::TestCase
     assert_equal 2, graph.links.size
     assert_equal [ 10, 10 ], graph.links.keys.map { |id| graph.length(id) }
     assert graph.nodes[b.id].signalized
+    assert_equal [ 15, 0 ], graph.nodes.values_at(a.id, b.id).map(&:inflow)
+    assert_equal({ left: 20, straight: 60, right: 20 }, graph.links.values.first.turn_weights)
   end
 end

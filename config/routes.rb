@@ -12,6 +12,8 @@ Rails.application.routes.draw do
   # Defines the root path route ("/")
   root "networks#index"
   resources :networks, only: %i[index show]
+  resources :nodes, only: :update
+  resources :links, only: :update
   get "intersection" => "intersections#show"
   get "ring" => "traffic#show"
 end

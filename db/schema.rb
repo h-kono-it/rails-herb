@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_18_125516) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_18_131325) do
   create_table "links", force: :cascade do |t|
     t.integer "network_id", null: false
     t.integer "from_node_id", null: false
@@ -18,6 +18,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_18_125516) do
     t.integer "speed_limit", default: 5, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "left_weight", default: 20, null: false
+    t.integer "straight_weight", default: 60, null: false
+    t.integer "right_weight", default: 20, null: false
     t.index ["from_node_id", "to_node_id"], name: "index_links_on_from_node_id_and_to_node_id", unique: true
     t.index ["from_node_id"], name: "index_links_on_from_node_id"
     t.index ["network_id"], name: "index_links_on_network_id"
@@ -37,6 +40,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_18_125516) do
     t.boolean "signalized", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "inflow", default: 15, null: false
     t.index ["network_id", "x", "y"], name: "index_nodes_on_network_id_and_x_and_y", unique: true
     t.index ["network_id"], name: "index_nodes_on_network_id"
   end
