@@ -161,7 +161,7 @@ class Simulation
           leader = lane[index + 1]
           heading_for_pocket = pocket_start < length && !car.pocket && car.position < pocket_start && turning_right?(car)
           gap =
-            if heading_for_pocket then pocket_entry_room(car, leader, pocket, pocket_start, length)
+            if heading_for_pocket then pocket_entry_room(car, leader, pocket, pocket_start, length, link, lanes)
             elsif leader then leader.position - car.position - 1
             else length - 1 - car.position + room_after(car, link, lanes)
             end
@@ -255,12 +255,14 @@ class Simulation
     # How far a right turner in the main lane may go when its link has a
     # pocket: up to the main-lane car ahead if that one is before the pocket,
     # otherwise on into the pocket up to the last car in it. With the pocket
-    # entrance taken it stops just before the pocket.
-    def pocket_entry_room(car, leader, pocket, pocket_start, length)
+    # entrance taken it stops just before the pocket. An empty pocket is just
+    # the way to the junction, so the car may turn in the same step instead
+    # of having to stop in the pocket first.
+    def pocket_entry_room(car, leader, pocket, pocket_start, length, link, lanes)
       return leader.position - car.position - 1 if leader && leader.position < pocket_start
+      return length - 1 - car.position + room_after(car, link, lanes) if pocket.empty?
 
-      last_free = pocket.first ? pocket.first.position - 1 : length - 1
-      last_free - car.position
+      pocket.first.position - 1 - car.position
     end
 
     # Free cells a lane leader may use past the end of its link.

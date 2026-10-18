@@ -203,6 +203,29 @@ class SimulationTest < ActiveSupport::TestCase
     assert_operator straight[10], :>, straight[0] * 1.3, "straight on from the west: #{straight}"
   end
 
+  test "even a one-cell pocket does not slow down light traffic" do
+    # Mostly right turners from the west and little oncoming traffic: before, every right
+    # turner had to brake into the pocket before turning, so a short pocket was slower than none
+    from_west = [ 2, 1 ]
+    weights = { from_west => { left: 1, straight: 1, right: 6 } }
+
+    speed = [ 0, 1 ].to_h do |cells|
+      total = (1..3).sum do |seed|
+        simulation = build(inflow: 12, weights:, pockets: { from_west => cells }, seed:)
+        link = link_between(simulation.graph, *from_west)
+        speeds = 1_500.times.filter_map do
+          simulation.step
+          cars = simulation.cars.select { |car| car.link == link }
+          simulation.average_velocity(cars) unless cars.empty?
+        end
+        speeds.sum / speeds.size
+      end
+      [ cells, total / 3 ]
+    end
+
+    assert_operator speed[1], :>=, speed[0], "average speed from the west: #{speed}"
+  end
+
   test "only right turners use the pocket, and it holds no more cars than it has cells" do
     simulation = build(inflow: 60, pockets: POCKETS_INTO_CROSSROADS)
     graph = simulation.graph
