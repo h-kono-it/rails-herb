@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title><%= content_for(:title) || "Rails Herb" %></title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="Rails Herb">
+    <meta name="mobile-web-app-capable" content="yes">
+    <%= csrf_meta_tags %>
+    <%= csp_meta_tag %>
+
+    <%= yield :head %>
+
+    <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
+    <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
+
+    <link rel="icon" href="/icon.png" type="image/png">
+    <link rel="icon" href="/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/icon.png">
+
+    <%# `stylesheet_link_tag :app` breaks with ReActionView slots on: Herb rewrites it to `stylesheet_path(:app)`, skipping Propshaft's expansion %>
+    <%= stylesheet_link_tag "application", "data-turbo-track": "reload" %>
+    <%= stylesheet_link_tag "traffic", "data-turbo-track": "reload" %>
+    <%= javascript_importmap_tags %>
+  </head>
+
+  <body>
+    <nav class="site-nav">
+      <%= link_to "Networks", networks_path, aria: { current: ("page" if controller_name == "networks") } %>
+      <%= link_to "Intersection", intersection_path, aria: { current: ("page" if current_page?(intersection_path)) } %>
+      <%= link_to "Ring Road", ring_path, aria: { current: ("page" if current_page?(ring_path)) } %>
+    </nav>
+    <%= yield %>
+  </body>
+</html>

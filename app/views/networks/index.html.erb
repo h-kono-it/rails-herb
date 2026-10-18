@@ -1,0 +1,17 @@
+<% content_for :title, "Networks" %>
+
+<main class="traffic">
+  <header class="traffic__header">
+    <h1>Networks</h1>
+    <p class="traffic__lead">道路網を選んでシミュレーションする。端の道路から車が湧いて、別の端から出ていく。</p>
+  </header>
+
+  <ul class="network-list">
+    <% @networks.each do |network| %>
+      <li>
+        <%= link_to network.name, network_path(network) %>
+        <span><%= network.nodes.size %> ノード / <%= network.links.size %> 車線</span>
+      </li>
+    <% end %>
+  </ul>
+</main>

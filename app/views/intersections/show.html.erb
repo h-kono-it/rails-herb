@@ -1,0 +1,103 @@
+<%# herb:slots server %>
+<%# herb:state (step: 0, ew_density: 15, ns_density: 15, cycle: 40, split: 50, slowdown: 15, seed: 1, playing: false) %>
+<%# Simulation inputs are read through helpers, which the client cannot evaluate, so changing them asks the server to re-run the simulation %>
+<% content_for :title, "Intersection" %>
+<% size = @intersection.size %>
+<% phase = @intersection.phase %>
+
+<main class="traffic" data-controller="autoplay">
+  <header class="traffic__header">
+    <h1>Intersection</h1>
+    <p class="traffic__lead">信号付き交差点。左側通行、各車線の端はつながっていて、出た車は反対側から戻ってくる。</p>
+  </header>
+
+  <section class="traffic__controls">
+    <div class="traffic__buttons">
+      <button type="button" data-herb-toggle="playing"><% if playing %>停止<% else %>再生<% end %></button>
+      <button type="button" data-herb-increment="step">1ステップ</button>
+      <button type="button" data-herb-reset="step">リセット</button>
+      <button type="button" data-herb-increment="seed">別の初期配置</button>
+    </div>
+
+    <label class="traffic__slider">
+      <span>東西の密度 <output><%= number_to_percentage(ew_density, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="0" max="60" step="1" value="<%= ew_density %>" autocomplete="off" data-herb-set="ew_density=$value">
+    </label>
+
+    <label class="traffic__slider">
+      <span>南北の密度 <output><%= number_to_percentage(ns_density, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="0" max="60" step="1" value="<%= ns_density %>" autocomplete="off" data-herb-set="ns_density=$value">
+    </label>
+
+    <label class="traffic__slider">
+      <span>信号サイクル <output><%= number_with_delimiter(cycle) %> ステップ</output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="12" max="120" step="2" value="<%= cycle %>" autocomplete="off" data-herb-set="cycle=$value">
+    </label>
+
+    <label class="traffic__slider">
+      <span>東西の青の割合 <output><%= number_to_percentage(split, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="10" max="90" step="5" value="<%= split %>" autocomplete="off" data-herb-set="split=$value">
+    </label>
+
+    <label class="traffic__slider">
+      <span>ランダム減速 <output><%= number_to_percentage(slowdown, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="0" max="50" step="1" value="<%= slowdown %>" autocomplete="off" data-herb-set="slowdown=$value">
+    </label>
+  </section>
+
+  <section class="traffic__stats">
+    <dl>
+      <div><dt>ステップ</dt><dd><%= number_with_delimiter(step) %></dd></div> <%# herb:disable herb-state-valid-reads %>
+      <div><dt>信号</dt><dd>東西 <%= IntersectionsHelper::LIGHT_LABELS[phase.horizontal] %> / 南北 <%= IntersectionsHelper::LIGHT_LABELS[phase.vertical] %></dd></div>
+      <div><dt>青時間</dt><dd>東西 <%= @intersection.green_horizontal %> / 南北 <%= @intersection.green_vertical %></dd></div>
+      <div><dt>平均速度</dt><dd><%= number_with_precision(@intersection.average_velocity, precision: 2) %> / <%= @intersection.vmax %></dd></div>
+      <div><dt>通過台数（直近100ステップ）</dt><dd><%= @intersection.recent_throughput %> 台</dd></div>
+      <div><dt>seed</dt><dd><%= number_with_delimiter(seed) %></dd></div> <%# herb:disable herb-state-valid-reads %>
+    </dl>
+  </section>
+
+  <div class="traffic__views">
+    <figure class="traffic__figure">
+      <%# Cars are HTML, not SVG: the ReActionView client builds added rows from HTML (marcoroth/herb#2811) %>
+      <div class="intersection__map" role="img" aria-label="交差点の現在の状態">
+        <div class="intersection__road intersection__road--horizontal" style="top: <%= grid_percent(size / 2 - 1, size) %>%; height: <%= grid_percent(2, size) %>%"></div>
+        <div class="intersection__road intersection__road--vertical" style="left: <%= grid_percent(size / 2 - 1, size) %>%; width: <%= grid_percent(2, size) %>%"></div>
+
+        <% Intersection::LANES.each do |lane| %>
+          <%# herb:key lane %>
+          <% x, y = signal_cell(@intersection, lane) %>
+          <span class="intersection__signal <%= light_class(@intersection.light(lane)) %>" style="left: <%= grid_percent(x, size) %>%; top: <%= grid_percent(y, size) %>%" title="<%= IntersectionsHelper::LANE_LABELS[lane] %>"></span>
+        <% end %>
+
+        <% @intersection.cars.each do |car| %>
+          <%# herb:key car.id %>
+          <% x, y = @intersection.cell(car.lane, car.position) %>
+          <span class="intersection__car" style="left: <%= grid_percent(x, size) %>%; top: <%= grid_percent(y, size) %>%; background: <%= velocity_color(car.velocity, @intersection.vmax) %>"></span>
+        <% end %>
+      </div>
+      <figcaption>色 = 速度（赤ほど遅い）。交差点手前の点が各車線の信号</figcaption>
+    </figure>
+
+    <figure class="traffic__figure">
+      <table class="intersection__lanes">
+        <thead>
+          <tr><th scope="col">車線</th><th scope="col">信号</th><th scope="col">台数</th><th scope="col">平均速度</th><th scope="col">待ち行列</th></tr>
+        </thead>
+        <tbody>
+          <% Intersection::LANES.each do |lane| %>
+            <%# herb:key lane %>
+            <% lane_cars = @intersection.cars_in(lane) %>
+            <tr>
+              <th scope="row"><%= IntersectionsHelper::LANE_LABELS[lane] %></th>
+              <td><span class="intersection__badge <%= light_class(@intersection.light(lane)) %>"><%= IntersectionsHelper::LIGHT_LABELS[@intersection.light(lane)] %></span></td>
+              <td><%= lane_cars.size %></td>
+              <td><%= number_with_precision(@intersection.average_velocity(lane_cars), precision: 2) %></td>
+              <td><%= @intersection.queue_length(lane) %> 台</td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+      <figcaption>待ち行列 = 停止線の手前20セル以内で止まっている台数</figcaption>
+    </figure>
+  </div>
+</main>

@@ -1,0 +1,344 @@
+:root {
+  --bg: #f7f7f5;
+  --fg: #1d1d1b;
+  --muted: #6b6b66;
+  --panel: #ffffff;
+  --line: #d9d9d4;
+  --lane: #2b2b28;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615;
+    --fg: #ececea;
+    --muted: #9a9a94;
+    --panel: #20201e;
+    --line: #3a3a37;
+    --lane: #4a4a46;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Hiragino Sans", sans-serif;
+}
+
+.traffic {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 16px 64px;
+}
+
+.traffic__header h1 {
+  margin: 0 0 4px;
+  font-size: 28px;
+}
+
+.traffic__lead {
+  margin: 0 0 24px;
+  color: var(--muted);
+}
+
+.traffic__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.traffic__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.traffic__buttons button {
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+}
+
+.traffic__buttons button:first-child {
+  min-width: 5em;
+  background: var(--fg);
+  color: var(--bg);
+}
+
+.traffic__slider {
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+}
+
+.traffic__slider output {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.traffic__stats dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0 0 24px;
+}
+
+.traffic__stats dt {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.traffic__stats dd {
+  margin: 0;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.traffic__views {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 24px;
+}
+
+@media (max-width: 720px) {
+  .traffic__views {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.traffic__figure {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.traffic__ring,
+.traffic__spacetime {
+  position: relative;
+}
+
+.traffic__ring svg {
+  display: block;
+  width: 100%;
+}
+
+.traffic__lane {
+  fill: none;
+  stroke: var(--lane);
+  stroke-width: 16;
+}
+
+.traffic__car {
+  position: absolute;
+  width: 3.2%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  translate: -50% -50%;
+}
+
+/* 120 cells x 80 rows */
+.traffic__spacetime {
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+}
+
+.traffic__row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: calc(100% / 80);
+}
+
+.traffic__cell {
+  position: absolute;
+  top: 0;
+  width: calc(100% / 120);
+  height: 100%;
+}
+
+.traffic__figure figcaption {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.site-nav {
+  display: flex;
+  gap: 16px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 16px 16px 0;
+  font-size: 14px;
+}
+
+.site-nav a {
+  color: var(--muted);
+}
+
+.site-nav a[aria-current="page"] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* 60 x 60 grid */
+.intersection__map {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.intersection__road {
+  position: absolute;
+  background: var(--lane);
+}
+
+.intersection__road--horizontal {
+  left: 0;
+  right: 0;
+}
+
+.intersection__road--vertical {
+  top: 0;
+  bottom: 0;
+}
+
+.intersection__car,
+.intersection__signal {
+  position: absolute;
+  width: calc(100% / 60);
+  height: calc(100% / 60);
+}
+
+.intersection__car {
+  border-radius: 2px;
+  scale: 0.8;
+}
+
+.intersection__signal {
+  border-radius: 50%;
+  outline: 2px solid var(--panel);
+}
+
+.is-green { background: hsl(130 70% 40%); }
+.is-yellow { background: hsl(45 95% 50%); }
+.is-red { background: hsl(0 75% 50%); }
+
+.intersection__lanes {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.intersection__lanes th,
+.intersection__lanes td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.intersection__lanes th:first-child {
+  text-align: left;
+}
+
+.intersection__badge {
+  display: inline-block;
+  min-width: 2em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  text-align: center;
+  font-size: 13px;
+}
+
+.network-list {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.network-list li {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.network-list span,
+.network__note {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.network-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.network-tabs a {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.network-tabs a[aria-current="page"] {
+  background: var(--fg);
+  color: var(--bg);
+}
+
+/* Network::SIZE x Network::SIZE grid (60) */
+.network__map {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.network__road {
+  position: absolute;
+  background: var(--lane);
+  transform-origin: 0 50%;
+}
+
+.network__junction,
+.network__car,
+.network__signal {
+  position: absolute;
+  width: calc(100% / 60);
+  height: calc(100% / 60);
+  translate: -50% -50%;
+}
+
+.network__junction {
+  width: calc(200% / 60);
+  height: calc(200% / 60);
+  background: var(--lane);
+}
+
+.network__car {
+  border-radius: 2px;
+  scale: 0.8;
+}
+
+.network__signal {
+  border-radius: 50%;
+  outline: 2px solid var(--panel);
+}
+
+.network__car.is-waiting-right {
+  outline: 2px solid var(--fg);
+  scale: 1;
+}

@@ -1,0 +1,71 @@
+<%# herb:slots server %>
+<%# herb:state (step: 0, density: 25, slowdown: 20, seed: 1, playing: false) %>
+<%# Simulation inputs are read through helpers, which the client cannot evaluate, so changing them asks the server to re-run the simulation %>
+<% content_for :title, "Ring Road" %>
+
+<main class="traffic" data-controller="autoplay">
+  <header class="traffic__header">
+    <h1>Ring Road</h1>
+    <p class="traffic__lead">Nagel–Schreckenberg モデル。<%= @road.length %> セルの環状道路を <%= @road.cars.size %> 台が走る。</p>
+  </header>
+
+  <section class="traffic__controls">
+    <div class="traffic__buttons">
+      <button type="button" data-herb-toggle="playing"><% if playing %>停止<% else %>再生<% end %></button>
+      <button type="button" data-herb-increment="step">1ステップ</button>
+      <button type="button" data-herb-reset="step">リセット</button>
+      <button type="button" data-herb-increment="seed">別の初期配置</button>
+    </div>
+
+    <label class="traffic__slider">
+      <span>密度 <output><%= number_to_percentage(density, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="5" max="80" step="1" value="<%= density %>" autocomplete="off" data-herb-set="density=$value">
+    </label>
+
+    <label class="traffic__slider">
+      <span>ランダム減速 <output><%= number_to_percentage(slowdown, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
+      <input type="range" min="0" max="60" step="1" value="<%= slowdown %>" autocomplete="off" data-herb-set="slowdown=$value">
+    </label>
+  </section>
+
+  <section class="traffic__stats">
+    <dl>
+      <div><dt>ステップ</dt><dd><%= number_with_delimiter(step) %></dd></div> <%# herb:disable herb-state-valid-reads %>
+      <div><dt>平均速度</dt><dd><%= number_with_precision(@road.average_velocity, precision: 2) %> / <%= @road.vmax %></dd></div>
+      <div><dt>停止中</dt><dd><%= @road.stopped_count %> 台</dd></div>
+      <div><dt>seed</dt><dd><%= number_with_delimiter(seed) %></dd></div> <%# herb:disable herb-state-valid-reads %>
+    </dl>
+  </section>
+
+  <%# Cars and cells are HTML, not SVG: the ReActionView client builds rows it adds from HTML, so SVG rows would land in the wrong namespace %>
+  <div class="traffic__views">
+    <figure class="traffic__figure">
+      <div class="traffic__ring" role="img" aria-label="環状道路の現在の状態">
+        <svg viewBox="0 0 320 320" aria-hidden="true">
+          <circle cx="160" cy="160" r="130" class="traffic__lane"></circle>
+        </svg>
+        <% @road.cars.each do |car| %>
+          <%# herb:key car.id %>
+          <% left, top = ring_percent(car.position, @road.length) %>
+          <span class="traffic__car" style="left: <%= left %>%; top: <%= top %>%; background: <%= velocity_color(car.velocity, @road.vmax) %>"></span>
+        <% end %>
+      </div>
+      <figcaption>いまの道路（色 = 速度、赤ほど遅い）</figcaption>
+    </figure>
+
+    <figure class="traffic__figure">
+      <div class="traffic__spacetime" role="img" aria-label="時空間図">
+        <% @history.each_with_index do |snapshot, row| %>
+          <%# herb:key snapshot.time %>
+          <div class="traffic__row" style="top: <%= row * 100.0 / TrafficController::HISTORY_ROWS %>%">
+            <% snapshot.cars.each do |car| %>
+              <%# herb:key car.id %>
+              <span class="traffic__cell" style="left: <%= car.position * 100.0 / @road.length %>%; background: <%= velocity_color(car.velocity, @road.vmax) %>"></span>
+            <% end %>
+          </div>
+        <% end %>
+      </div>
+      <figcaption>時空間図（横 = 位置、縦 = 時間で下が最新）。渋滞は左下へ流れる赤い帯になる</figcaption>
+    </figure>
+  </div>
+</main>
