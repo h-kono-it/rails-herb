@@ -13,7 +13,8 @@ export default class extends Controller {
 
   async save(event) {
     const body = new FormData()
-    body.append(this.paramValue, event.target.value)
+    const { type, checked, value } = event.target
+    body.append(this.paramValue, type === "checkbox" ? (checked ? "1" : "0") : value)
 
     const response = await fetch(this.urlValue, {
       method: "PATCH",

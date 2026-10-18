@@ -1,5 +1,5 @@
 <%# herb:slots server %>
-<%# herb:state (step: 0, junction: 0, cycle: 40, split: 50, slowdown: 15, seed: 1, playing: false) %>
+<%# herb:state (step: 0, junction: 0, slowdown: 15, seed: 1, playing: false) %>
 <%# Simulation inputs are read through helpers, which the client cannot evaluate, so changing them asks the server to re-run the simulation %>
 <% content_for :title, @network.name %>
 <% graph = @simulation.graph %>
@@ -25,16 +25,6 @@
       <button type="button" data-herb-reset="step">リセット</button>
       <button type="button" data-herb-increment="seed">別の乱数</button>
     </div>
-
-    <label class="traffic__slider">
-      <span>信号サイクル <output><%= number_with_delimiter(cycle) %> ステップ</output></span> <%# herb:disable herb-state-valid-reads %>
-      <input type="range" min="12" max="120" step="2" value="<%= cycle %>" autocomplete="off" data-herb-set="cycle=$value">
-    </label>
-
-    <label class="traffic__slider">
-      <span>東西の青の割合 <output><%= number_to_percentage(split, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
-      <input type="range" min="10" max="90" step="5" value="<%= split %>" autocomplete="off" data-herb-set="split=$value">
-    </label>
 
     <label class="traffic__slider">
       <span>ランダム減速 <output><%= number_to_percentage(slowdown, precision: 0) %></output></span> <%# herb:disable herb-state-valid-reads %>
@@ -120,6 +110,33 @@
               <button type="button" data-herb-set="junction=<%= node.id %>" aria-pressed="<%= node == selected %>"><%= junction_label(node) %></button>
             <% end %>
           </div>
+          <section class="network__signal-settings" aria-label="信号設定">
+            <div class="network__signal-header">
+              <h2>信号設定</h2>
+              <label class="network__toggle" data-controller="autosave" data-autosave-url-value="<%= node_path(selected.id) %>" data-autosave-param-value="node[signalized]">
+                <%= tag.input type: "checkbox", checked: selected.signalized, autocomplete: "off", data: { action: "change->autosave#save" } %>
+                信号あり
+              </label>
+            </div>
+            <% if selected.signalized %>
+              <% plan = @simulation.plan(selected.id) %>
+              <div class="network__signal-sliders">
+                <label class="traffic__slider" data-controller="autosave" data-autosave-url-value="<%= node_path(selected.id) %>" data-autosave-param-value="node[cycle]">
+                  <span>サイクル <output data-autosave-target="output"><%= selected.cycle %></output> ステップ</span>
+                  <input type="range" min="12" max="120" step="2" value="<%= selected.cycle %>" autocomplete="off" aria-label="サイクル" data-action="input->autosave#preview change->autosave#save">
+                </label>
+                <label class="traffic__slider" data-controller="autosave" data-autosave-url-value="<%= node_path(selected.id) %>" data-autosave-param-value="node[split]">
+                  <span>東西の青の割合 <output data-autosave-target="output"><%= selected.split %></output>%</span>
+                  <input type="range" min="10" max="90" step="5" value="<%= selected.split %>" autocomplete="off" aria-label="東西の青の割合" data-action="input->autosave#preview change->autosave#save">
+                </label>
+                <label class="traffic__slider" data-controller="autosave" data-autosave-url-value="<%= node_path(selected.id) %>" data-autosave-param-value="node[offset]">
+                  <span>オフセット <output data-autosave-target="output"><%= selected.offset %></output> ステップ</span>
+                  <input type="range" min="0" max="119" step="1" value="<%= selected.offset %>" autocomplete="off" aria-label="オフセット" data-action="input->autosave#preview change->autosave#save">
+                </label>
+              </div>
+              <p class="network__note">青時間 東西 <%= plan.green_horizontal %> / 南北 <%= plan.green_vertical %> ステップ（黄 <%= SignalPlan::YELLOW %>・全赤 <%= SignalPlan::ALL_RED %> ずつ、1周 <%= plan.cycle %> ステップ）。オフセットはサイクルで割った余りが効く</p>
+            <% end %>
+          </section>
           <table class="intersection__lanes network__turns">
             <caption>交差点 <%= junction_label(selected_junction(junction_nodes, junction)) %> の進行方向</caption> <%# herb:disable herb-state-valid-reads %>
             <thead>
@@ -156,23 +173,24 @@
         <% if junctions.any? %>
           <table class="intersection__lanes">
             <thead>
-              <tr><th scope="col">信号交差点</th><th scope="col">東西</th><th scope="col">南北</th><th scope="col">待ち台数</th><th scope="col">右折待ち</th></tr>
+              <tr><th scope="col">信号交差点</th><th scope="col">東西</th><th scope="col">南北</th><th scope="col">サイクル / オフセット</th><th scope="col">待ち台数</th><th scope="col">右折待ち</th></tr>
             </thead>
             <tbody>
               <% junctions.each do |node| %>
                 <%# herb:key node.id %>
-                <% phase = @simulation.signal.phase(@simulation.time) %>
+                <% phase = @simulation.phase(node.id) %>
                 <tr>
                   <th scope="row">(<%= node.x %>, <%= node.y %>)</th>
                   <td><span class="intersection__badge <%= light_class(phase.horizontal) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.horizontal] %></span></td>
                   <td><span class="intersection__badge <%= light_class(phase.vertical) %>"><%= IntersectionsHelper::LIGHT_LABELS[phase.vertical] %></span></td>
+                  <td><%= node.cycle %> / <%= node.offset %></td>
                   <td><%= graph.incoming(node.id).sum { |link| @simulation.queue_length(link.id) } %> 台</td>
                   <td><%= graph.incoming(node.id).sum { |link| @simulation.waiting_to_turn_right(link.id) } %> 台</td>
                 </tr>
               <% end %>
             </tbody>
           </table>
-          <figcaption>待ち台数 = 交差点に向かう車線で止まっている台数。右折待ち = 対向車が途切れるのを停止線で待っている台数。全交差点が同じタイミングで切り替わる</figcaption>
+          <figcaption>待ち台数 = 交差点に向かう車線で止まっている台数。右折待ち = 対向車が途切れるのを停止線で待っている台数。信号は交差点ごとのサイクル・オフセットで切り替わる</figcaption>
         <% else %>
           <p class="network__note">信号のない道路網。右折車は対向車が途切れるのを待つ。同じ車線に入ろうとする車は、左折・直進・右折の順に1台ずつ進む。</p>
         <% end %>

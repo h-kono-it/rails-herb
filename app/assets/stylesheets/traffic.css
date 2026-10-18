@@ -402,3 +402,40 @@ body {
 .network__muted {
   color: var(--muted);
 }
+
+.network__signal-settings {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.network__signal-header {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.network__signal-header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.network__toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.network__signal-sliders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.network__signal-settings .network__note {
+  margin: 0;
+}

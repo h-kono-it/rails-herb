@@ -45,6 +45,23 @@ class NetworksTest < ApplicationSystemTestCase
     assert_text "設定 57%" # 80 / (80 + 60)
   end
 
+  test "sets a junction's signal plan" do
+    center = @network.nodes.find_by!(x: 30, y: 30)
+
+    visit network_path(@network)
+    assert_text "青時間 東西 16 / 南北 16 ステップ"
+
+    find("input[aria-label='サイクル']").set(60)
+
+    assert_text "青時間 東西 26 / 南北 26 ステップ" # (60 - 8) / 2
+    assert_equal 60, center.reload.cycle
+
+    uncheck "信号あり"
+
+    assert_no_selector "input[aria-label='サイクル']"
+    assert wait_for { !center.reload.signalized }, "the junction lost its signal"
+  end
+
   private
     def wait_for(timeout: Capybara.default_max_wait_time)
       deadline = Time.current + timeout

@@ -27,7 +27,7 @@ class SimulationTest < ActiveSupport::TestCase
   end
 
   def build(inflow: 30, signalized: true, weights: {}, **options)
-    Simulation.new(graph: graph(inflow:, signalized:, weights:), cycle: 30, split: 0.5, slowdown: 0.2, **options)
+    Simulation.new(graph: graph(inflow:, signalized:, weights:), slowdown: 0.2, **options)
   end
 
   test "no two cars ever share a cell" do
@@ -160,6 +160,33 @@ class SimulationTest < ActiveSupport::TestCase
     %i[left straight right].each { |turn| assert_operator simulation.turn_count(link, turn), :>, 0, turn }
   end
 
+  test "each junction runs its own signal plan" do
+    nodes = [
+      Simulation::Node.new(id: 1, x: 20, y: 30, signalized: true, inflow: 0, cycle: 40, split: 50, offset: 0),
+      Simulation::Node.new(id: 2, x: 40, y: 30, signalized: true, inflow: 0, cycle: 40, split: 50, offset: 20),
+      Simulation::Node.new(id: 3, x: 60, y: 30, signalized: true, inflow: 0, cycle: 60, split: 75, offset: 0),
+      Simulation::Node.new(id: 4, x: 0, y: 30, signalized: false, inflow: 0)
+    ]
+    links = [ [ 4, 1 ], [ 1, 2 ], [ 2, 3 ] ].each_with_index.map do |(from, to), id|
+      Simulation::Link.new(id:, from:, to:, speed_limit: 5, turn_weights: DEFAULT_WEIGHTS)
+    end
+    simulation = Simulation.new(graph: Simulation::Graph.new(nodes:, links:), slowdown: 0)
+
+    # Same plan, but node 2 is 20 steps into its cycle: horizontal green 16, yellow 2, all red 2
+    assert_equal [ :green, :red ], simulation.phase(1).to_h.values_at(:horizontal, :vertical)
+    assert_equal [ :red, :green ], simulation.phase(2).to_h.values_at(:horizontal, :vertical)
+    assert_equal :red, simulation.light(simulation.graph.links.fetch(1)), "the link into node 2 follows node 2's plan"
+
+    # Node 3: 60 - 8 = 52 steps of green, 75% of it horizontal
+    assert_equal [ 39, 13 ], [ simulation.plan(3).green_horizontal, simulation.plan(3).green_vertical ]
+    assert_nil simulation.phase(4)
+    assert_nil simulation.plan(4)
+
+    simulation.run(39)
+    assert_equal :yellow, simulation.phase(3).horizontal
+    assert_equal [ :red, :red ], simulation.phase(1).to_h.values_at(:horizontal, :vertical)
+  end
+
   test "dead ends are where cars enter and leave" do
     g = graph
 
@@ -176,7 +203,7 @@ class SimulationTest < ActiveSupport::TestCase
   test "a network turns into a simulation graph" do
     network = Network.create!(name: "test")
     a = network.nodes.create!(x: 0, y: 0)
-    b = network.nodes.create!(x: 10, y: 0, signalized: true, inflow: 0)
+    b = network.nodes.create!(x: 10, y: 0, signalized: true, inflow: 0, cycle: 60, split: 70, offset: 5)
     network.connect(a, b)
 
     graph = network.graph
@@ -184,6 +211,7 @@ class SimulationTest < ActiveSupport::TestCase
     assert_equal 2, graph.links.size
     assert_equal [ 10, 10 ], graph.links.keys.map { |id| graph.length(id) }
     assert graph.nodes[b.id].signalized
+    assert_equal [ 60, 70, 5 ], graph.nodes[b.id].to_h.values_at(:cycle, :split, :offset)
     assert_equal [ 15, 0 ], graph.nodes.values_at(a.id, b.id).map(&:inflow)
     assert_equal({ left: 20, straight: 60, right: 20 }, graph.links.values.first.turn_weights)
   end

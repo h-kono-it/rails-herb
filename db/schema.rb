@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_18_131325) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_18_132425) do
   create_table "links", force: :cascade do |t|
     t.integer "network_id", null: false
     t.integer "from_node_id", null: false
@@ -41,6 +41,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_18_131325) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "inflow", default: 15, null: false
+    t.integer "cycle", default: 40, null: false
+    t.integer "split", default: 50, null: false
+    t.integer "offset", default: 0, null: false
     t.index ["network_id", "x", "y"], name: "index_nodes_on_network_id_and_x_and_y", unique: true
     t.index ["network_id"], name: "index_nodes_on_network_id"
   end

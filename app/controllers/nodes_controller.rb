@@ -2,7 +2,7 @@ class NodesController < ApplicationController
   def update
     node = Node.find(params[:id])
 
-    if node.update(params.expect(node: [ :inflow ]))
+    if node.update(params.expect(node: %i[inflow signalized cycle split offset]))
       respond_to do |format|
         format.json { head :no_content }
         format.html { redirect_to node.network }

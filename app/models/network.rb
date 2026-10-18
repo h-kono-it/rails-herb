@@ -16,7 +16,10 @@ class Network < ApplicationRecord
   # Plain data for the simulator, so it never touches the database.
   def graph
     Simulation::Graph.new(
-      nodes: nodes.map { |node| Simulation::Node.new(id: node.id, x: node.x, y: node.y, signalized: node.signalized, inflow: node.inflow) },
+      nodes: nodes.map { |node| Simulation::Node.new(
+          id: node.id, x: node.x, y: node.y, inflow: node.inflow,
+          signalized: node.signalized, cycle: node.cycle, split: node.split, offset: node.offset
+        ) },
       links: links.map { |link| Simulation::Link.new(id: link.id, from: link.from_node_id, to: link.to_node_id, speed_limit: link.speed_limit, turn_weights: link.turn_weights) }
     )
   end

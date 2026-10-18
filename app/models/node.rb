@@ -6,4 +6,7 @@ class Node < ApplicationRecord
   validates :x, :y, numericality: { only_integer: true, in: 0..Network::SIZE }
   validates :y, uniqueness: { scope: [ :network_id, :x ] }
   validates :inflow, numericality: { only_integer: true, in: 0..100 }
+  validates :cycle, numericality: { only_integer: true, in: 12..120 }
+  validates :split, numericality: { only_integer: true, in: 10..90 }
+  validates :offset, numericality: { only_integer: true, in: 0..119 }
 end

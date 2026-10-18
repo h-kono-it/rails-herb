@@ -9,7 +9,8 @@
 # - At a junction a car picks its next road by the turn weights of the link
 #   it arrives on (left, straight, right), spread over the roads the junction
 #   offers. It never goes back the way it came unless there is no other road.
-# - At a signalized junction a car may only cross on green. Links running
+# - At a signalized junction a car may only cross on green. Each junction
+#   runs its own fixed-time plan (cycle, split, offset). Links running
 #   left-right follow the horizontal phase, the others the vertical one.
 # - Turning right crosses the oncoming lane (traffic keeps left), so a right
 #   turner waits at the stop line while an oncoming car going straight or left
@@ -23,7 +24,11 @@
 # Like the other models it is deterministic for a given seed.
 class Simulation
   # inflow: cars per 100 steps entering at this node, if it is a dead end
-  Node = Data.define(:id, :x, :y, :signalized, :inflow)
+  # cycle, split, offset: the signal plan, if signalized (split in percent
+  # of the green time for the horizontal phase, offset in steps)
+  Node = Data.define(:id, :x, :y, :signalized, :inflow, :cycle, :split, :offset) do
+    def initialize(cycle: 40, split: 50, offset: 0, **) = super
+  end
   # turn_weights: { left:, straight:, right: } relative weights at the junction this link leads into
   Link = Data.define(:id, :from, :to, :speed_limit, :turn_weights)
   Car = Data.define(:id, :link, :position, :velocity, :next_link)
@@ -97,12 +102,14 @@ class Simulation
   THROUGHPUT_WINDOW = 100
   TURN_PRIORITY = { left: 0, straight: 1, right: 2 }.freeze
 
-  attr_reader :graph, :cars, :time, :signal, :total_exits
+  attr_reader :graph, :cars, :time, :total_exits
 
-  def initialize(graph:, cycle:, split:, slowdown:, seed: 1)
+  def initialize(graph:, slowdown:, seed: 1)
     @graph = graph
     @slowdown = slowdown
-    @signal = SignalPlan.new(cycle:, split:)
+    @plans = graph.nodes.values.select(&:signalized).to_h do |node|
+      [ node.id, SignalPlan.new(cycle: node.cycle, split: node.split / 100.0) ]
+    end
     @random = Random.new(seed)
     @cars = []
     @next_id = 0
@@ -159,9 +166,17 @@ class Simulation
   end
 
   def light(link)
-    return :green unless @graph.nodes.fetch(link.to).signalized
+    current = phase(link.to)
+    current ? current.public_send(@graph.axis(link)) : :green
+  end
 
-    @signal.light(@graph.axis(link), @time)
+  # The signal plan of a junction, or nil if it has no signal.
+  def plan(node_id) = @plans[node_id]
+
+  # A signalized junction's current phase, or nil if it has no signal.
+  def phase(node_id)
+    plan = @plans[node_id] or return
+    plan.phase(@time + @graph.nodes.fetch(node_id).offset)
   end
 
   def average_velocity(cars = @cars)
