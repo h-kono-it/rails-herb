@@ -7,6 +7,8 @@
     <meta name="application-name" content="Rails Herb">
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
+    <%# Every page here holds live simulation state, so a cached snapshot would bring back stale states (e.g. playing) on a revisit %>
+    <meta name="turbo-cache-control" content="no-cache">
     <%= csp_meta_tag %>
 
     <%= yield :head %>
