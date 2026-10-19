@@ -107,6 +107,14 @@ class Simulation
       end
     end
 
+    def ==(other) = other.is_a?(Graph) && nodes == other.nodes && links == other.links
+
+    # Whether two graphs have the same lanes, so cars on one fit on the other.
+    def same_roads?(other) = roads == other.roads
+
+    protected
+      def roads = @links.transform_values { |link| [ link.from, link.to, length(link.id) ] }
+
     private
       def distance(link)
         from, to = @nodes.values_at(link.from, link.to)
@@ -124,14 +132,14 @@ class Simulation
   THROUGHPUT_WINDOW = 100
   TURN_PRIORITY = { left: 0, straight: 1, right: 2 }.freeze
 
-  attr_reader :graph, :cars, :time, :total_exits
+  # configured_at: the step the current settings took effect from, nil if
+  # they have been the same since step 0
+  attr_reader :graph, :cars, :time, :total_exits, :configured_at
 
   def initialize(graph:, slowdown:, seed: 1)
     @graph = graph
     @slowdown = slowdown
-    @plans = graph.nodes.values.select(&:signalized).to_h do |node|
-      [ node.id, SignalPlan.new(cycle: node.cycle, split: node.split / 100.0) ]
-    end
+    @plans = build_plans
     @random = Random.new(seed)
     @cars = []
     @next_id = 0
@@ -196,6 +204,21 @@ class Simulation
     self
   end
 
+  # Carries on from the current step with new settings on the same roads.
+  # Cars stay where they are and keep the turns they have already picked;
+  # cars in a pocket that was shortened finish their turn from where they
+  # are. Signals jump to the phase their new plan has at this step.
+  def reconfigure(graph:, slowdown:)
+    return self if graph == @graph && slowdown == @slowdown
+    raise ArgumentError, "the roads have changed" unless graph.same_roads?(@graph)
+
+    @graph = graph
+    @slowdown = slowdown
+    @plans = build_plans
+    @configured_at = @time if @time.positive?
+    self
+  end
+
   def light(link)
     current = phase(link.to)
     current ? current.public_send(@graph.axis(link)) : :green
@@ -248,6 +271,12 @@ class Simulation
   end
 
   private
+    def build_plans
+      @graph.nodes.values.select(&:signalized).to_h do |node|
+        [ node.id, SignalPlan.new(cycle: node.cycle, split: node.split / 100.0) ]
+      end
+    end
+
     def turning_right?(car)
       car.next_link.present? && @graph.turn(car.link, car.next_link) == :right
     end

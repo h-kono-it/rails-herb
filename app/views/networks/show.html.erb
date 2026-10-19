@@ -26,7 +26,10 @@
       <button type="button" data-herb-reset="step">最初に戻す</button>
       <button type="button" data-herb-increment="seed">乱数を変える</button>
     </div>
-    <p class="board__step"><span>ステップ</span> <%= number_with_delimiter(step) %></p> <%# herb:disable herb-state-valid-reads %>
+    <div class="board__clock">
+      <p class="board__step"><span>ステップ</span> <%= number_with_delimiter(step) %></p> <%# herb:disable herb-state-valid-reads %>
+      <p class="board__configured"><%= configured_note(@simulation) %></p>
+    </div>
   </section>
 
   <div class="board__layout">

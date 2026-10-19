@@ -142,6 +142,14 @@ module NetworksHelper
   end
 
   # Each two-way road once, as [from, to] node pairs.
+  # Settings changed mid-run apply from that step on; going back to the
+  # start replays with them from step 0.
+  def configured_note(simulation)
+    return unless simulation.configured_at
+
+    "ステップ #{number_with_delimiter(simulation.configured_at)} から今の設定で計算中（最初に戻すと 0 から）"
+  end
+
   def roads(graph)
     graph.links.values.map { |link| [ link.from, link.to ].sort }.uniq.map { |ids| graph.nodes.values_at(*ids) }
   end

@@ -99,6 +99,20 @@
   font-weight: 400;
 }
 
+.board__clock {
+  text-align: right;
+}
+
+.board__configured {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.board__configured:empty {
+  display: none;
+}
+
 /* Two columns, the map stays in view while the settings scroll */
 
 .board__layout {

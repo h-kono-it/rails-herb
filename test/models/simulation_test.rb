@@ -272,6 +272,62 @@ class SimulationTest < ActiveSupport::TestCase
     assert_equal build(seed: 4).run(300).cars, build(seed: 4).run(300).cars
   end
 
+  test "carrying on from a saved run gives the same result as replaying from step 0" do
+    saved = Marshal.load(Marshal.dump(build(seed: 4, pockets: POCKETS_INTO_CROSSROADS).run(300)))
+    saved.reconfigure(graph: graph(pockets: POCKETS_INTO_CROSSROADS), slowdown: 0.2).run(300)
+
+    assert_nil saved.configured_at, "the same settings are no change"
+    assert_equal build(seed: 4, pockets: POCKETS_INTO_CROSSROADS).run(600).cars, saved.cars
+  end
+
+  test "new settings take effect from the current step" do
+    simulation = build(inflow: 30).run(300)
+    cars = simulation.cars
+
+    simulation.reconfigure(graph: graph(inflow: 0, signalized: false), slowdown: 0)
+
+    assert_equal 300, simulation.configured_at
+    assert_equal cars, simulation.cars, "cars stay where they are"
+    assert_nil simulation.phase(1)
+    simulation.run(500)
+    assert_empty simulation.cars, "with no inflow the network drains"
+    assert_equal 0, simulation.total_waiting
+  end
+
+  test "cars in a pocket that was shortened finish their turn without running into anyone" do
+    [ 1, 2, 3 ].product([ {}, { [ 2, 1 ] => 2, [ 3, 1 ] => 4 } ]).each do |seed, shorter|
+      simulation = build(inflow: 60, seed:, pockets: POCKETS_INTO_CROSSROADS)
+      simulation.step until simulation.cars.count(&:pocket) >= 6
+
+      simulation.reconfigure(graph: graph(inflow: 60, pockets: shorter), slowdown: 0.2)
+      assert simulation.cars.any? { |car| car.pocket && car.position < simulation.graph.pocket_start(car.link) }, "some cars are left outside the new pocket"
+
+      500.times do
+        before = simulation.cars.index_by(&:id)
+        simulation.step
+        cells = simulation.cars.map { |car| [ car.link, car.pocket, car.position ] }
+        assert_equal cells.size, cells.uniq.size, "collision at t=#{simulation.time} (seed=#{seed}, pockets=#{shorter})"
+        simulation.cars.each do |car|
+          assert car.position.between?(0, simulation.graph.length(car.link) - 1)
+          assert_operator car.velocity, :>=, 0
+          was = before[car.id]
+          assert_operator car.position, :>=, was.position, "car #{car.id} went backwards" if was&.link == car.link
+        end
+      end
+      simulation.cars.select(&:pocket).each do |car|
+        assert_operator car.position, :>=, simulation.graph.pocket_start(car.link), "the old pocket has drained"
+      end
+      assert_equal simulation.total_spawned, simulation.cars.size + simulation.total_exits
+    end
+  end
+
+  test "settings cannot move cars onto different roads" do
+    simulation = build.run(10)
+    other = Simulation::Graph.new(nodes: graph.nodes.values, links: graph.links.values.first(4))
+
+    assert_raises(ArgumentError) { simulation.reconfigure(graph: other, slowdown: 0.2) }
+  end
+
   test "a network turns into a simulation graph" do
     network = Network.create!(name: "test")
     a = network.nodes.create!(x: 0, y: 0)
